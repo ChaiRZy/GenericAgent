@@ -4568,18 +4568,25 @@ class GenericAgentTUI(App[None]):
                 # @ candidate accepted: replace the in-progress @token with the
                 # picked path (quoted when it contains spaces), cursor to end.
                 inp = self.query_one("#input", InputArea)
+                hide_pal = True
                 try:
                     row, col = inp.cursor_location
                     line = inp.document.get_line(row)[:col]
                     tok = find_at_token(line)
                     if tok is not None:
                         rep = format_pick(cmd_id[3:])
-                        self._suppress_palette_open = True
+                        raw = cmd_id[3:]          # candidate path; dirs end with '/'
+                        is_dir = raw.endswith(('/', '\\'))
+                        if not is_dir:
+                            self._suppress_palette_open = True
                         inp.replace(rep, (row, tok[1]), (row, col))
                         inp.move_cursor((row, tok[1] + len(rep)))
+                        if is_dir:
+                            hide_pal = False      # let on_text_area_changed refresh palette
                 except Exception:
                     pass
-                self._hide_palette()
+                if hide_pal:
+                    self._hide_palette()
                 inp.focus()
                 return
             if cmd_id:

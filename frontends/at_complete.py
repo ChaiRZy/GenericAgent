@@ -156,8 +156,8 @@ def fuzzy_rank(query: str, files: list[str], limit: int = 10) -> list[str]:
 # ------------------------------------------------------- edit-time token
 
 # `(?:^|\s)@` 前置：@ 前必须是行首或空白 → 邮箱/代码里的 a@b 不触发。
-# 字符集含路径分隔符与 ~ :，\w 在 unicode 下覆盖中文文件名。
-_AT_TOKEN_RE = re.compile(r"(?:^|\s)(@[\w\-./\\~:]*)$", re.UNICODE)
+# @token 取 @ 到第一个空白之间的所有字符，覆盖中文/全角标点等任意文件名。
+_AT_TOKEN_RE = re.compile(r"(?:^|\s)(@\S*)$", re.UNICODE)
 
 
 def find_at_token(line_before_cursor: str):
@@ -240,7 +240,27 @@ def candidates_for(query: str, root: str, limit: int = 15, absolute: bool = Fals
     idx = get_index(root)
     files = idx.snapshot()
     if not files:
-        idx.warm()                       # 惰性兜底：该根还没建索引 → 后台建（本次可能空，下次有）
+        idx.warm()                       # 惰性兜底：该根还没建索引 → 后台建
+        # 但 warm() 是后台线程，snapshot() 仍然为空 → 用 os.listdir 立即兜底
+        try:
+            raw = sorted(os.listdir(root))
+        except OSError:
+            raw = []
+        if not query and raw:
+            # os.listdir 返回扁平名，而 fuzzy_rank 空查询依赖 index 的嵌套路径格式
+            # 才能区分根文件和根目录。直接传进去会导致文件过多把目录挤出 [:limit]。
+            # 这里平衡分配：文件一半、目录一半，保证目录可见。
+            flat = [f for f in raw if not os.path.isdir(os.path.join(root, f))]
+            dirs = [f + "/" for f in raw if os.path.isdir(os.path.join(root, f))]
+            half = limit // 2
+            res = flat[:half] + dirs[:limit - half]
+            if absolute:
+                res = [os.path.normpath(os.path.join(root, c)) for c in res]
+            return res
+        files = []
+        for f in raw:
+            fp = os.path.join(root, f)
+            files.append(f + "/" if os.path.isdir(fp) else f)
     res = fuzzy_rank(query, files, limit) if files else []
     if absolute:
         res = [os.path.normpath(os.path.join(root, c)) for c in res]
