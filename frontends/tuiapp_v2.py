@@ -6152,7 +6152,9 @@ class GenericAgentTUI(App[None]):
             try: latest = sess.ask_user_events.get_nowait()
             except queue.Empty: break
         if not latest: return
-        question = latest["question"]; candidates = latest["candidates"]
+        question = latest["question"]; candidates = latest.get("candidates") or []
+        if not candidates:  # 无候选时跳过 ChoiceList 创建，避免抢焦点
+            return
         multi = bool(self._MULTI_RE.search(question))
         kind = "multi_choice" if multi else "choice"
         choices = [(c, c) for c in candidates] + [(FREE_TEXT_LABEL, FREE_TEXT_CHOICE)]
