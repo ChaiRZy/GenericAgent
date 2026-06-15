@@ -3521,9 +3521,11 @@ class GenericAgentTUI(App[None]):
         Binding("ctrl+t",     "pick_theme",    "Theme", show=False),
     ]
 
-    def __init__(self, agent_factory: Optional[AgentFactory] = None) -> None:
+    def __init__(self, agent_factory: Optional[AgentFactory] = None,
+                 restore_last: bool = False) -> None:
         super().__init__()
         self.agent_factory: AgentFactory = agent_factory or default_agent_factory
+        self._restore_last = restore_last
         self.sessions: dict[int, AgentSession] = {}
         self.current_id: Optional[int] = None
         # Wall-clock marker used by `/cost` to scope subagent log scans to
@@ -3668,6 +3670,15 @@ class GenericAgentTUI(App[None]):
         except Exception: pass
         get_index(os.path.join(ROOT_DIR, "temp")).warm()   # @ 补全：预热未绑时的默认根（temp）
         self.add_session("main")
+        if self._restore_last:
+            try:
+                from continue_cmd import list_sessions
+                sessions = list_sessions()
+                if sessions:
+                    latest_path = sessions[0][0]
+                    self._do_continue_restore(latest_path)
+            except Exception:
+                pass
         self._system(f"Welcome to GenericAgent TUI. 按 / 唤起命令面板，{fmt_key('ctrl+n')} 新建会话。")
 
         # CSS `#planbar-scroll { display: none }` keeps it hidden by default —
@@ -7357,7 +7368,10 @@ class GenericAgentTUI(App[None]):
 
 # ---------- CLI ----------
 def build_arg_parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(description="GenericAgent TUI v2 (refined visual style)")
+    p = argparse.ArgumentParser(description="GenericAgent TUI v2 (refined visual style)")
+    p.add_argument("--restore-last", action="store_true",
+                   help="Auto-restore the most recent session on startup")
+    return p
 
 
 def _warn_mintty():
@@ -7389,9 +7403,9 @@ def _warn_mintty():
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    build_arg_parser().parse_args(argv)
+    args = build_arg_parser().parse_args(argv)
     _warn_mintty()
-    GenericAgentTUI().run()
+    GenericAgentTUI(restore_last=args.restore_last).run()
     return 0
 
 
