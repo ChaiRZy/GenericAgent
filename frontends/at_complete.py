@@ -136,8 +136,14 @@ def _subseq_score(q: str, path: str):
 def fuzzy_rank(query: str, files: list[str], limit: int = 10) -> list[str]:
     q = query.lower()
     if not q:
-        # bare `@`: surface shallow paths first for discoverability
-        return sorted(files, key=lambda f: (f.count("/"), f))[:limit]
+        # bare `@`: surface root-level items (files + directories) for
+        # discoverability; directories carry trailing '/' so the user can
+        # select one and continue typing to browse deeper.  Without this a
+        # single alphabetically-early directory (e.g. "generate/") can crowd
+        # out other dirs when the file count exceeds the display limit.
+        root_files = sorted(f for f in files if "/" not in f)
+        subdirs = sorted(set(f.split("/", 1)[0] for f in files if "/" in f))
+        return (root_files + [d + "/" for d in subdirs])[:limit]
     scored = []
     for f in files:
         s = _subseq_score(q, f.lower())
@@ -180,7 +186,13 @@ def is_path_like(token: str) -> bool:
         return True
     if token.startswith(('~/', '~\\', './', '.\\', '../', '..\\', '/', '\\')):
         return True
-    return len(token) >= 3 and token[0].isalpha() and token[1] == ':' and token[2] in '/\\'
+    if len(token) >= 3 and token[0].isalpha() and token[1] == ':' and token[2] in '/\\':
+        return True
+    # Any token containing a path separator indicates explicit directory
+    # browsing intent — covers Chinese / Unicode directory names (记录/…等).
+    if '/' in token or '\\' in token:
+        return True
+    return False
 
 
 def path_completions(token: str, root: str, limit: int = 15) -> list[str]:
