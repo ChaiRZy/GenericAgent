@@ -3521,9 +3521,11 @@ class GenericAgentTUI(App[None]):
         Binding("ctrl+t",     "pick_theme",    "Theme", show=False),
     ]
 
-    def __init__(self, agent_factory: Optional[AgentFactory] = None) -> None:
+    def __init__(self, agent_factory: Optional[AgentFactory] = None,
+                 restore_last: bool = False) -> None:
         super().__init__()
         self.agent_factory: AgentFactory = agent_factory or default_agent_factory
+        self._restore_last = restore_last
         self.sessions: dict[int, AgentSession] = {}
         self.current_id: Optional[int] = None
         # Wall-clock marker used by `/cost` to scope subagent log scans to
@@ -3668,6 +3670,15 @@ class GenericAgentTUI(App[None]):
         except Exception: pass
         get_index(os.path.join(ROOT_DIR, "temp")).warm()   # @ 补全：预热未绑时的默认根（temp）
         self.add_session("main")
+        if self._restore_last:
+            try:
+                from continue_cmd import list_sessions
+                sessions = list_sessions()
+                if sessions:
+                    latest_path = sessions[0][0]
+                    self._do_continue_restore(latest_path)
+            except Exception:
+                pass
         self._system(f"Welcome to GenericAgent TUI. 按 / 唤起命令面板，{fmt_key('ctrl+n')} 新建会话。")
 
         # CSS `#planbar-scroll { display: none }` keeps it hidden by default —
@@ -4573,18 +4584,25 @@ class GenericAgentTUI(App[None]):
                 # @ candidate accepted: replace the in-progress @token with the
                 # picked path (quoted when it contains spaces), cursor to end.
                 inp = self.query_one("#input", InputArea)
+                hide_pal = True
                 try:
                     row, col = inp.cursor_location
                     line = inp.document.get_line(row)[:col]
                     tok = find_at_token(line)
                     if tok is not None:
                         rep = format_pick(cmd_id[3:])
-                        self._suppress_palette_open = True
+                        raw = cmd_id[3:]          # candidate path; dirs end with '/'
+                        is_dir = raw.endswith(('/', '\\'))
+                        if not is_dir:
+                            self._suppress_palette_open = True
                         inp.replace(rep, (row, tok[1]), (row, col))
                         inp.move_cursor((row, tok[1] + len(rep)))
+                        if is_dir:
+                            hide_pal = False      # let on_text_area_changed refresh palette
                 except Exception:
                     pass
-                self._hide_palette()
+                if hide_pal:
+                    self._hide_palette()
                 inp.focus()
                 return
             if cmd_id:
@@ -6152,7 +6170,9 @@ class GenericAgentTUI(App[None]):
             try: latest = sess.ask_user_events.get_nowait()
             except queue.Empty: break
         if not latest: return
-        question = latest["question"]; candidates = latest["candidates"]
+        question = latest["question"]; candidates = latest.get("candidates") or []
+        if not candidates:  # 无候选时跳过 ChoiceList 创建，避免抢焦点
+            return
         multi = bool(self._MULTI_RE.search(question))
         kind = "multi_choice" if multi else "choice"
         choices = [(c, c) for c in candidates] + [(FREE_TEXT_LABEL, FREE_TEXT_CHOICE)]
@@ -7368,7 +7388,10 @@ class GenericAgentTUI(App[None]):
 
 # ---------- CLI ----------
 def build_arg_parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(description="GenericAgent TUI v2 (refined visual style)")
+    p = argparse.ArgumentParser(description="GenericAgent TUI v2 (refined visual style)")
+    p.add_argument("--restore-last", action="store_true",
+                   help="Auto-restore the most recent session on startup")
+    return p
 
 
 def _warn_mintty():
@@ -7400,9 +7423,9 @@ def _warn_mintty():
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    build_arg_parser().parse_args(argv)
+    args = build_arg_parser().parse_args(argv)
     _warn_mintty()
-    GenericAgentTUI().run()
+    GenericAgentTUI(restore_last=args.restore_last).run()
     return 0
 
 
