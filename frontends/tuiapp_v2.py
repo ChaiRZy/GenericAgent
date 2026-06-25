@@ -3524,10 +3524,11 @@ class GenericAgentTUI(App[None]):
     ]
 
     def __init__(self, agent_factory: Optional[AgentFactory] = None,
-                 restore_last: bool = False) -> None:
+                 restore_last: bool = False, workspace_path: Optional[str] = None) -> None:
         super().__init__()
         self.agent_factory: AgentFactory = agent_factory or default_agent_factory
         self._restore_last = restore_last
+        self._workspace_path = workspace_path
         self.sessions: dict[int, AgentSession] = {}
         self.current_id: Optional[int] = None
         # Wall-clock marker used by `/cost` to scope subagent log scans to
@@ -3682,6 +3683,13 @@ class GenericAgentTUI(App[None]):
             except Exception:
                 pass
         self._system(f"Welcome to GenericAgent TUI. 按 / 唤起命令面板，{fmt_key('ctrl+n')} 新建会话。")
+
+        # Auto-activate workspace if --workspace was passed
+        if self._workspace_path:
+            try:
+                self._do_workspace_activate(self._workspace_path)
+            except Exception:
+                pass
 
         # CSS `#planbar-scroll { display: none }` keeps it hidden by default —
         # the renderer adds `-visible` once plan items materialize.
@@ -7393,6 +7401,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="GenericAgent TUI v2 (refined visual style)")
     p.add_argument("--restore-last", action="store_true",
                    help="Auto-restore the most recent session on startup")
+    p.add_argument("--workspace", metavar="PATH", nargs="?", const=".",
+                   help="Enter workspace/project mode on startup. "
+                        "If PATH is omitted, uses current working directory.")
     return p
 
 def _warn_mintty():
@@ -7426,7 +7437,10 @@ def _warn_mintty():
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
     _warn_mintty()
-    GenericAgentTUI(restore_last=args.restore_last, ).run()
+    GenericAgentTUI(
+        restore_last=args.restore_last,
+        workspace_path=args.workspace,
+    ).run()
     return 0
 
 
