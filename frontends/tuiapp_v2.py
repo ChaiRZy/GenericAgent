@@ -4592,25 +4592,18 @@ class GenericAgentTUI(App[None]):
                 # @ candidate accepted: replace the in-progress @token with the
                 # picked path (quoted when it contains spaces), cursor to end.
                 inp = self.query_one("#input", InputArea)
-                hide_pal = True
                 try:
                     row, col = inp.cursor_location
                     line = inp.document.get_line(row)[:col]
                     tok = find_at_token(line)
                     if tok is not None:
                         rep = format_pick(cmd_id[3:])
-                        raw = cmd_id[3:]          # candidate path; dirs end with '/'
-                        is_dir = raw.endswith(('/', '\\'))
-                        if not is_dir:
-                            self._suppress_palette_open = True
+                        self._suppress_palette_open = True
                         inp.replace(rep, (row, tok[1]), (row, col))
                         inp.move_cursor((row, tok[1] + len(rep)))
-                        if is_dir:
-                            hide_pal = False      # let on_text_area_changed refresh palette
                 except Exception:
                     pass
-                if hide_pal:
-                    self._hide_palette()
+                self._hide_palette()
                 inp.focus()
                 return
             if cmd_id:
@@ -6181,9 +6174,7 @@ class GenericAgentTUI(App[None]):
             try: latest = sess.ask_user_events.get_nowait()
             except queue.Empty: break
         if not latest: return
-        question = latest["question"]; candidates = latest.get("candidates") or []
-        if not candidates:  # 无候选时跳过 ChoiceList 创建，避免抢焦点
-            return
+        question = latest["question"]; candidates = latest["candidates"]
         multi = bool(self._MULTI_RE.search(question))
         kind = "multi_choice" if multi else "choice"
         choices = [(c, c) for c in candidates] + [(FREE_TEXT_LABEL, FREE_TEXT_CHOICE)]
@@ -7404,7 +7395,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Auto-restore the most recent session on startup")
     return p
 
-
 def _warn_mintty():
     """Warn only for direct Git Bash/mintty, not Git Bash inside Windows Terminal."""
     if sys.platform != 'win32':
@@ -7436,7 +7426,7 @@ def _warn_mintty():
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
     _warn_mintty()
-    GenericAgentTUI(restore_last=args.restore_last).run()
+    GenericAgentTUI(restore_last=args.restore_last, ).run()
     return 0
 
 
