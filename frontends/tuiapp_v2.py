@@ -3687,7 +3687,11 @@ class GenericAgentTUI(App[None]):
         # Auto-activate workspace if --workspace was passed
         if self._workspace_path:
             try:
-                self._do_workspace_activate(self._workspace_path)
+                # Convert relative path to absolute for workspace_cmd.validate_path
+                ws_path = os.path.abspath(self._workspace_path)
+                msg = self._do_workspace_activate(ws_path)
+                if msg:
+                    self._system(msg)
             except Exception:
                 pass
 
