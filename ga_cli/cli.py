@@ -12,6 +12,8 @@ if sys.platform == "win32" and sys.stdout.encoding and sys.stdout.encoding.lower
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
+_WORKSPACE_SENTINEL = object()  # 标记 --workspace 裸参数（无路径值）
+
 
 def _frontends():
     return os.path.join(PROJECT_DIR, "frontends")
@@ -29,7 +31,6 @@ def launch_frontend(cmd_parts, args=None):
         part = part.replace("{REFLECT}", _reflect())
         full_cmd.append(part)
 
-    # 插入额外参数
     if args:
         full_cmd.extend(args)
 
@@ -166,6 +167,8 @@ def main():
     parser.add_argument("command", nargs="?", help="命令名")
     parser.add_argument("args", nargs="*", help="子命令参数")
     parser.add_argument("-v", "--version", action="store_true", help="显示版本")
+    parser.add_argument("--workspace", nargs="?", const=_WORKSPACE_SENTINEL,
+                        default=None, help=argparse.SUPPRESS)
 
     args, unknown = parser.parse_known_args()
 
@@ -206,6 +209,18 @@ def main():
         sys.exit(1)
 
     extra = list(args.args) + unknown
+
+    # === 处理 --workspace (需要在顶层捕获，确保 ./ 不被当作位置参数) ===
+    if hasattr(args, 'workspace') and args.workspace is not None:
+        # 从 extra 中移除裸 --workspace (它可能因旧逻辑留在 unknown 中)
+        extra = [x for x in extra if x != '--workspace']
+        if args.workspace is _WORKSPACE_SENTINEL:
+            # --workspace 裸参数 → 使用执行 ga 时的原始目录（环境变量）
+            original_cwd = os.environ.get('ORIGINAL_CWD') or os.getcwd()
+            extra[:0] = ['--workspace', original_cwd]
+        else:
+            # --workspace 有路径值 → 正常传递
+            extra[:0] = ['--workspace', args.workspace]
 
     # === 处理命令特有 flags ===
     cmd_parts = list(info["cmd"])
